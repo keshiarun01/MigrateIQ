@@ -1,0 +1,227 @@
+<?xml version="1.0"?>
+<!-- Simplified but structurally faithful SSIS 2019 package.
+     Complexity: MEDIUM-HIGH. Pattern: hand-built SCD Type 2
+     (Lookup current row -> Conditional Split -> OLE DB Command expire -> insert new version).
+     lineageId attributes trimmed for readability; FriendlyExpression is authoritative. -->
+<DTS:Executable xmlns:DTS="www.microsoft.com/SqlServer/Dts"
+  DTS:refId="Package"
+  DTS:ObjectName="Load_DimPolicy"
+  DTS:ExecutableType="Microsoft.Package"
+  DTS:Description="SCD2 load of edw.dim_policy. Tracked: status_code, annual_premium, deductible">
+  <DTS:Property DTS:Name="PackageFormatVersion">8</DTS:Property>
+
+  <DTS:ConnectionManagers>
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[PolicyAdmin]" DTS:ObjectName="PolicyAdmin" DTS:CreationName="OLEDB" />
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[InsuranceDW]" DTS:ObjectName="InsuranceDW" DTS:CreationName="OLEDB" />
+  </DTS:ConnectionManagers>
+
+  <DTS:Variables>
+    <DTS:Variable DTS:Namespace="User" DTS:ObjectName="RunStartTime" DTS:EvaluateAsExpression="True"
+      DTS:Expression="@[System::StartTime]">
+      <DTS:VariableValue DTS:DataType="7">2026-01-01T00:00:00</DTS:VariableValue>
+    </DTS:Variable>
+  </DTS:Variables>
+
+  <DTS:Executables>
+    <DTS:Executable DTS:refId="Package\DFT SCD2 Policy" DTS:ObjectName="DFT SCD2 Policy" DTS:ExecutableType="Microsoft.Pipeline">
+      <DTS:ObjectData>
+        <pipeline version="1">
+          <components>
+
+            <component refId="Package\DFT SCD2 Policy\SRC Policy" componentClassID="Microsoft.OLEDBSource" name="SRC Policy">
+              <properties>
+                <property name="AccessMode">2</property>
+                <property name="SqlCommand">SELECT p.policy_id, p.policy_number, p.product_id, p.status_code,
+       p.effective_date, p.expiration_date, p.annual_premium, p.deductible
+FROM dbo.policy p
+WHERE p.status_code &lt;&gt; 'P'   -- pending policies are not loaded to the warehouse</property>
+              </properties>
+              <connections><connection name="OleDbConnection" connectionManagerRefId="Package.ConnectionManagers[PolicyAdmin]" /></connections>
+              <outputs>
+                <output name="OLE DB Source Output">
+                  <outputColumns>
+                    <outputColumn name="policy_id" dataType="i4" />
+                    <outputColumn name="policy_number" dataType="str" length="20" />
+                    <outputColumn name="product_id" dataType="i4" />
+                    <outputColumn name="status_code" dataType="str" length="1" />
+                    <outputColumn name="effective_date" dataType="dbDate" />
+                    <outputColumn name="expiration_date" dataType="dbDate" />
+                    <outputColumn name="annual_premium" dataType="numeric" precision="12" scale="2" />
+                    <outputColumn name="deductible" dataType="numeric" precision="10" scale="2" />
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <!-- Lookup 1: product dimension. No match = FAIL the package. -->
+            <component refId="Package\DFT SCD2 Policy\LKP dim_product" componentClassID="Microsoft.Lookup" name="LKP dim_product">
+              <properties>
+                <property name="SqlCommand">SELECT product_key, product_id, line_of_business FROM edw.dim_product</property>
+                <property name="CacheType">0</property>                 <!-- 0 = Full cache -->
+                <property name="NoMatchBehavior">0</property>           <!-- 0 = Treat rows with no matching entries as errors -->
+              </properties>
+              <connections><connection name="OleDbConnection" connectionManagerRefId="Package.ConnectionManagers[InsuranceDW]" /></connections>
+              <inputs>
+                <input name="Lookup Input">
+                  <inputColumns>
+                    <inputColumn cachedName="product_id">
+                      <properties><property name="JoinToReferenceColumn">product_id</property></properties>
+                    </inputColumn>
+                  </inputColumns>
+                </input>
+              </inputs>
+              <outputs>
+                <output name="Lookup Match Output" errorRowDisposition="FailComponent">
+                  <outputColumns>
+                    <outputColumn name="product_key" dataType="i4"><properties><property name="CopyFromReferenceColumn">product_key</property></properties></outputColumn>
+                    <outputColumn name="line_of_business" dataType="str" length="20"><properties><property name="CopyFromReferenceColumn">line_of_business</property></properties></outputColumn>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <component refId="Package\DFT SCD2 Policy\DER Status Desc" componentClassID="Microsoft.DerivedColumn" name="DER Status Desc">
+              <outputs>
+                <output name="Derived Column Output">
+                  <outputColumns>
+                    <outputColumn name="status_desc" dataType="str" length="20">
+                      <properties>
+                        <property name="FriendlyExpression">status_code == "A" ? "ACTIVE" : status_code == "C" ? "CANCELLED" : status_code == "L" ? "LAPSED" : "UNKNOWN"</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <!-- Lookup 2: current version in dim_policy. No match = NEW policy (redirect). -->
+            <component refId="Package\DFT SCD2 Policy\LKP Current dim_policy" componentClassID="Microsoft.Lookup" name="LKP Current dim_policy">
+              <properties>
+                <property name="SqlCommand">SELECT policy_key, policy_id, status_code, annual_premium, deductible
+FROM edw.dim_policy WHERE is_current = 1</property>
+                <property name="CacheType">0</property>
+                <property name="NoMatchBehavior">1</property>           <!-- 1 = Send rows with no matching entries to the no match output -->
+              </properties>
+              <inputs>
+                <input name="Lookup Input">
+                  <inputColumns>
+                    <inputColumn cachedName="policy_id"><properties><property name="JoinToReferenceColumn">policy_id</property></properties></inputColumn>
+                  </inputColumns>
+                </input>
+              </inputs>
+              <outputs>
+                <output name="Lookup Match Output">
+                  <outputColumns>
+                    <outputColumn name="existing_policy_key" dataType="i4"><properties><property name="CopyFromReferenceColumn">policy_key</property></properties></outputColumn>
+                    <outputColumn name="old_status_code" dataType="str" length="1"><properties><property name="CopyFromReferenceColumn">status_code</property></properties></outputColumn>
+                    <outputColumn name="old_annual_premium" dataType="numeric" precision="12" scale="2"><properties><property name="CopyFromReferenceColumn">annual_premium</property></properties></outputColumn>
+                    <outputColumn name="old_deductible" dataType="numeric" precision="10" scale="2"><properties><property name="CopyFromReferenceColumn">deductible</property></properties></outputColumn>
+                  </outputColumns>
+                </output>
+                <output name="Lookup No Match Output" />
+              </outputs>
+            </component>
+
+            <!-- Only tracked columns trigger a new version. Changes to policy_number /
+                 expiration_date on an existing policy are intentionally IGNORED. -->
+            <component refId="Package\DFT SCD2 Policy\CSPL Detect Change" componentClassID="Microsoft.ConditionalSplit" name="CSPL Detect Change">
+              <outputs>
+                <output name="Changed">
+                  <properties>
+                    <property name="EvaluationOrder">0</property>
+                    <property name="FriendlyExpression">status_code != old_status_code || annual_premium != old_annual_premium || deductible != old_deductible</property>
+                  </properties>
+                </output>
+                <output name="Unchanged" isDefaultOut="true" />
+              </outputs>
+            </component>
+
+            <component refId="Package\DFT SCD2 Policy\MC Changed" componentClassID="Microsoft.Multicast" name="MC Changed">
+              <outputs>
+                <output name="Multicast Output 1" />
+                <output name="Multicast Output 2" />
+              </outputs>
+            </component>
+
+            <!-- Row-by-row UPDATE: expire the current version -->
+            <component refId="Package\DFT SCD2 Policy\CMD Expire Current" componentClassID="Microsoft.OLEDBCommand" name="CMD Expire Current">
+              <properties>
+                <property name="SqlCommand">UPDATE edw.dim_policy
+SET row_effective_to = ?, is_current = 0
+WHERE policy_key = ?</property>
+              </properties>
+              <inputs>
+                <input name="OLE DB Command Input">
+                  <inputColumns>
+                    <inputColumn cachedName="RunStartTime_param"><properties><property name="ParameterIndex">0</property><property name="SourceVariable">User::RunStartTime</property></properties></inputColumn>
+                    <inputColumn cachedName="existing_policy_key"><properties><property name="ParameterIndex">1</property></properties></inputColumn>
+                  </inputColumns>
+                </input>
+              </inputs>
+            </component>
+
+            <component refId="Package\DFT SCD2 Policy\UALL New And Changed" componentClassID="Microsoft.UnionAll" name="UALL New And Changed">
+              <inputs>
+                <input name="Union All Input 1" />
+                <input name="Union All Input 2" />
+              </inputs>
+            </component>
+
+            <component refId="Package\DFT SCD2 Policy\DER SCD2 Columns" componentClassID="Microsoft.DerivedColumn" name="DER SCD2 Columns">
+              <outputs>
+                <output name="Derived Column Output">
+                  <outputColumns>
+                    <outputColumn name="row_effective_from" dataType="dbTimeStamp2" scale="7"><properties><property name="FriendlyExpression">@[User::RunStartTime]</property></properties></outputColumn>
+                    <outputColumn name="row_effective_to" dataType="dbTimeStamp2" scale="7"><properties><property name="FriendlyExpression">(DT_DBTIMESTAMP2,7)"9999-12-31 00:00:00"</property></properties></outputColumn>
+                    <outputColumn name="is_current" dataType="bool"><properties><property name="FriendlyExpression">(DT_BOOL)1</property></properties></outputColumn>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <component refId="Package\DFT SCD2 Policy\DST dim_policy" componentClassID="Microsoft.OLEDBDestination" name="DST dim_policy">
+              <properties>
+                <property name="AccessMode">3</property>
+                <property name="OpenRowset">[edw].[dim_policy]</property>
+              </properties>
+              <connections><connection name="OleDbConnection" connectionManagerRefId="Package.ConnectionManagers[InsuranceDW]" /></connections>
+              <inputs>
+                <input name="OLE DB Destination Input">
+                  <inputColumns>
+                    <inputColumn cachedName="policy_id" externalMetadataColumnId="policy_id" />
+                    <inputColumn cachedName="policy_number" externalMetadataColumnId="policy_number" />
+                    <inputColumn cachedName="product_key" externalMetadataColumnId="product_key" />
+                    <inputColumn cachedName="line_of_business" externalMetadataColumnId="line_of_business" />
+                    <inputColumn cachedName="status_code" externalMetadataColumnId="status_code" />
+                    <inputColumn cachedName="status_desc" externalMetadataColumnId="status_desc" />
+                    <inputColumn cachedName="annual_premium" externalMetadataColumnId="annual_premium" />
+                    <inputColumn cachedName="deductible" externalMetadataColumnId="deductible" />
+                    <inputColumn cachedName="effective_date" externalMetadataColumnId="effective_date" />
+                    <inputColumn cachedName="expiration_date" externalMetadataColumnId="expiration_date" />
+                    <inputColumn cachedName="row_effective_from" externalMetadataColumnId="row_effective_from" />
+                    <inputColumn cachedName="row_effective_to" externalMetadataColumnId="row_effective_to" />
+                    <inputColumn cachedName="is_current" externalMetadataColumnId="is_current" />
+                  </inputColumns>
+                </input>
+              </inputs>
+            </component>
+          </components>
+
+          <paths>
+            <path startId="SRC Policy.Outputs[OLE DB Source Output]" endId="LKP dim_product.Inputs[Lookup Input]" />
+            <path startId="LKP dim_product.Outputs[Lookup Match Output]" endId="DER Status Desc.Inputs[Derived Column Input]" />
+            <path startId="DER Status Desc.Outputs[Derived Column Output]" endId="LKP Current dim_policy.Inputs[Lookup Input]" />
+            <path startId="LKP Current dim_policy.Outputs[Lookup Match Output]" endId="CSPL Detect Change.Inputs[Conditional Split Input]" />
+            <path startId="LKP Current dim_policy.Outputs[Lookup No Match Output]" endId="UALL New And Changed.Inputs[Union All Input 1]" />
+            <path startId="CSPL Detect Change.Outputs[Changed]" endId="MC Changed.Inputs[Multicast Input]" />
+            <path startId="MC Changed.Outputs[Multicast Output 1]" endId="CMD Expire Current.Inputs[OLE DB Command Input]" />
+            <path startId="MC Changed.Outputs[Multicast Output 2]" endId="UALL New And Changed.Inputs[Union All Input 2]" />
+            <path startId="UALL New And Changed.Outputs[Union All Output 1]" endId="DER SCD2 Columns.Inputs[Derived Column Input]" />
+            <path startId="DER SCD2 Columns.Outputs[Derived Column Output]" endId="DST dim_policy.Inputs[OLE DB Destination Input]" />
+            <!-- CSPL Detect Change.Outputs[Unchanged] is not connected: rows are discarded -->
+          </paths>
+        </pipeline>
+      </DTS:ObjectData>
+    </DTS:Executable>
+  </DTS:Executables>
+</DTS:Executable>

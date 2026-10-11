@@ -1,0 +1,132 @@
+{
+  "ir_version": "1.0.0",
+  "unit_id": "ssis.Load_DimPolicyholder",
+  "name": "Load_DimPolicyholder",
+  "source_artifact": {
+    "technology": "ssis",
+    "file_path": "sample_artifacts/ssis/Load_DimPolicyholder.dtsx",
+    "object_name": "Load_DimPolicyholder",
+    "sha256": "COMPUTED_AT_PARSE_TIME",
+    "parser_version": "0.1.0",
+    "parsed_at": "2026-10-09T00:00:00Z"
+  },
+  "sources": [
+    {
+      "alias": "src_policyholder",
+      "system": "PolicyAdmin",
+      "schema_name": "dbo",
+      "table": "policyholder",
+      "sql_override": {
+        "original": "SELECT policyholder_id, first_name, last_name, date_of_birth, email, state_code\nFROM dbo.policyholder WITH (NOLOCK)",
+        "dialect": "tsql",
+        "spark_sql": "SELECT policyholder_id, first_name, last_name, date_of_birth, email, state_code FROM dbo.policyholder",
+        "translation_status": "deterministic",
+        "referenced_columns": ["policyholder_id", "first_name", "last_name", "date_of_birth", "email", "state_code"],
+        "notes": "WITH (NOLOCK) table hint dropped; no Spark equivalent needed for snapshot reads."
+      },
+      "columns": [
+        {"name": "policyholder_id", "data_type": "int", "nullable": false, "is_key": true},
+        {"name": "first_name", "data_type": "string", "precision": 50, "nullable": false},
+        {"name": "last_name", "data_type": "string", "precision": 50, "nullable": false},
+        {"name": "date_of_birth", "data_type": "date", "nullable": true},
+        {"name": "email", "data_type": "string", "precision": 100, "nullable": true},
+        {"name": "state_code", "data_type": "string", "precision": 2, "nullable": false}
+      ]
+    }
+  ],
+  "references": [],
+  "steps": [
+    {
+      "type": "derived_column",
+      "id": "der_policyholder_attributes",
+      "inputs": ["src_policyholder"],
+      "source_component": "DER Policyholder Attributes",
+      "keep_input_columns": true,
+      "mappings": [
+        {
+          "target_column": "full_name",
+          "target_type": "string",
+          "expression": {
+            "original": "TRIM(first_name) + \" \" + TRIM(last_name)",
+            "dialect": "ssis_expr",
+            "spark_sql": "concat(trim(first_name), ' ', trim(last_name))",
+            "translation_status": "verified",
+            "referenced_columns": ["first_name", "last_name"]
+          }
+        },
+        {
+          "target_column": "email_normalized",
+          "target_type": "string",
+          "expression": {
+            "original": "ISNULL(email) || TRIM(email) == \"\" ? NULL(DT_WSTR,100) : LOWER(TRIM(email))",
+            "dialect": "ssis_expr",
+            "spark_sql": "CASE WHEN email IS NULL OR trim(email) = '' THEN NULL ELSE lower(trim(email)) END",
+            "translation_status": "verified",
+            "referenced_columns": ["email"],
+            "notes": "SSIS ISNULL(x) is a boolean test (x IS NULL), not T-SQL ISNULL(x, default)."
+          }
+        },
+        {
+          "target_column": "age_band",
+          "target_type": "string",
+          "expression": {
+            "original": "ISNULL(date_of_birth) ? \"UNKNOWN\" : DATEDIFF(\"yy\", date_of_birth, GETDATE()) < 25 ? \"<25\" : DATEDIFF(\"yy\", date_of_birth, GETDATE()) < 45 ? \"25-44\" : DATEDIFF(\"yy\", date_of_birth, GETDATE()) < 65 ? \"45-64\" : \"65+\"",
+            "dialect": "ssis_expr",
+            "spark_sql": "CASE WHEN date_of_birth IS NULL THEN 'UNKNOWN' WHEN year(current_date()) - year(date_of_birth) < 25 THEN '<25' WHEN year(current_date()) - year(date_of_birth) < 45 THEN '25-44' WHEN year(current_date()) - year(date_of_birth) < 65 THEN '45-64' ELSE '65+' END",
+            "translation_status": "verified",
+            "referenced_columns": ["date_of_birth"],
+            "notes": "DATEDIFF('yy') counts calendar-year boundaries, NOT completed years of age. Preserve legacy semantics; do not 'fix' to months_between/12. Reconciliation must pin current_date to the legacy run date."
+          }
+        },
+        {
+          "target_column": "dw_load_ts",
+          "target_type": "timestamp",
+          "expression": {
+            "original": "GETDATE()",
+            "dialect": "ssis_expr",
+            "spark_sql": "current_timestamp()",
+            "translation_status": "deterministic",
+            "referenced_columns": [],
+            "notes": "Non-deterministic; excluded from reconciliation checksums."
+          }
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "input": "der_policyholder_attributes",
+      "dataset": {
+        "alias": "tgt_dim_policyholder",
+        "system": "InsuranceDW",
+        "schema_name": "edw",
+        "table": "dim_policyholder",
+        "columns": [
+          {"name": "policyholder_id", "data_type": "int", "nullable": false, "is_key": true},
+          {"name": "full_name", "data_type": "string", "precision": 101, "nullable": false},
+          {"name": "email_normalized", "data_type": "string", "precision": 100, "nullable": true},
+          {"name": "state_code", "data_type": "string", "precision": 2, "nullable": false},
+          {"name": "age_band", "data_type": "string", "precision": 10, "nullable": false},
+          {"name": "dw_load_ts", "data_type": "timestamp", "nullable": false}
+        ]
+      },
+      "load_strategy": {"mode": "full_overwrite"},
+      "partition_by": []
+    }
+  ],
+  "dq_rules": [
+    {"dataset_alias": "tgt_dim_policyholder", "column": "policyholder_id", "rule_type": "unique", "severity": "error", "derived_from": "PRIMARY KEY"},
+    {"dataset_alias": "tgt_dim_policyholder", "column": "full_name", "rule_type": "not_null", "severity": "error", "derived_from": "NOT NULL constraint"},
+    {"dataset_alias": "tgt_dim_policyholder", "column": "age_band", "rule_type": "accepted_values", "params": {"values": ["UNKNOWN", "<25", "25-44", "45-64", "65+"]}, "severity": "error", "derived_from": "derived column domain"},
+    {"dataset_alias": "tgt_dim_policyholder", "rule_type": "row_count_match", "params": {"against": "src_policyholder"}, "severity": "error", "derived_from": "full reload, no filters"}
+  ],
+  "business_rules": [
+    "Target is truncated and fully reloaded each run (Execute SQL Task 'Truncate dim_policyholder')."
+  ],
+  "unsupported_constructs": [],
+  "complexity": {
+    "score": 15,
+    "factors": {"derived_columns": 4, "lookups": 0, "joins": 0, "pending_expressions": 0},
+    "recommended_path": "template"
+  }
+}

@@ -1,0 +1,150 @@
+<?xml version="1.0"?>
+<!-- Simplified but structurally faithful SSIS 2019 package (PackageFormatVersion 8).
+     Complexity: LOW. Pattern: truncate + full reload with derived columns. -->
+<DTS:Executable xmlns:DTS="www.microsoft.com/SqlServer/Dts"
+  DTS:refId="Package"
+  DTS:ObjectName="Load_DimPolicyholder"
+  DTS:ExecutableType="Microsoft.Package"
+  DTS:CreatorName="CORP\etl_dev"
+  DTS:Description="Full reload of edw.dim_policyholder from PolicyAdmin">
+  <DTS:Property DTS:Name="PackageFormatVersion">8</DTS:Property>
+
+  <DTS:ConnectionManagers>
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[PolicyAdmin]"
+      DTS:ObjectName="PolicyAdmin" DTS:CreationName="OLEDB">
+      <DTS:ObjectData>
+        <DTS:ConnectionManager DTS:ConnectionString="Data Source=SQLPROD01;Initial Catalog=PolicyAdmin;Provider=SQLNCLI11.1;Integrated Security=SSPI;" />
+      </DTS:ObjectData>
+    </DTS:ConnectionManager>
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[InsuranceDW]"
+      DTS:ObjectName="InsuranceDW" DTS:CreationName="OLEDB">
+      <DTS:ObjectData>
+        <DTS:ConnectionManager DTS:ConnectionString="Data Source=SQLDW01;Initial Catalog=InsuranceDW;Provider=SQLNCLI11.1;Integrated Security=SSPI;" />
+      </DTS:ObjectData>
+    </DTS:ConnectionManager>
+  </DTS:ConnectionManagers>
+
+  <DTS:Executables>
+    <!-- Control flow step 1: truncate target -->
+    <DTS:Executable DTS:refId="Package\Truncate dim_policyholder"
+      DTS:ObjectName="Truncate dim_policyholder"
+      DTS:ExecutableType="Microsoft.ExecuteSQLTask">
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask"
+          SQLTask:Connection="InsuranceDW"
+          SQLTask:SqlStatementSource="TRUNCATE TABLE edw.dim_policyholder;" />
+      </DTS:ObjectData>
+    </DTS:Executable>
+
+    <!-- Control flow step 2: data flow -->
+    <DTS:Executable DTS:refId="Package\DFT Load Policyholder"
+      DTS:ObjectName="DFT Load Policyholder"
+      DTS:ExecutableType="Microsoft.Pipeline">
+      <DTS:ObjectData>
+        <pipeline version="1">
+          <components>
+
+            <component refId="Package\DFT Load Policyholder\SRC Policyholder"
+              componentClassID="Microsoft.OLEDBSource" name="SRC Policyholder">
+              <properties>
+                <property name="AccessMode">2</property>
+                <property name="SqlCommand">SELECT policyholder_id, first_name, last_name, date_of_birth, email, state_code
+FROM dbo.policyholder WITH (NOLOCK)</property>
+              </properties>
+              <connections>
+                <connection name="OleDbConnection" connectionManagerRefId="Package.ConnectionManagers[PolicyAdmin]" />
+              </connections>
+              <outputs>
+                <output refId="Package\DFT Load Policyholder\SRC Policyholder.Outputs[OLE DB Source Output]" name="OLE DB Source Output">
+                  <outputColumns>
+                    <outputColumn name="policyholder_id" dataType="i4" lineageId="Package\DFT Load Policyholder\SRC Policyholder.Outputs[OLE DB Source Output].Columns[policyholder_id]" />
+                    <outputColumn name="first_name" dataType="wstr" length="50" lineageId="Package\DFT Load Policyholder\SRC Policyholder.Outputs[OLE DB Source Output].Columns[first_name]" />
+                    <outputColumn name="last_name" dataType="wstr" length="50" lineageId="Package\DFT Load Policyholder\SRC Policyholder.Outputs[OLE DB Source Output].Columns[last_name]" />
+                    <outputColumn name="date_of_birth" dataType="dbDate" lineageId="Package\DFT Load Policyholder\SRC Policyholder.Outputs[OLE DB Source Output].Columns[date_of_birth]" />
+                    <outputColumn name="email" dataType="wstr" length="100" lineageId="Package\DFT Load Policyholder\SRC Policyholder.Outputs[OLE DB Source Output].Columns[email]" />
+                    <outputColumn name="state_code" dataType="str" length="2" codePage="1252" lineageId="Package\DFT Load Policyholder\SRC Policyholder.Outputs[OLE DB Source Output].Columns[state_code]" />
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <component refId="Package\DFT Load Policyholder\DER Policyholder Attributes"
+              componentClassID="Microsoft.DerivedColumn" name="DER Policyholder Attributes">
+              <outputs>
+                <output refId="Package\DFT Load Policyholder\DER Policyholder Attributes.Outputs[Derived Column Output]" name="Derived Column Output">
+                  <outputColumns>
+                    <outputColumn name="full_name" dataType="wstr" length="101"
+                      lineageId="Package\DFT Load Policyholder\DER Policyholder Attributes.Outputs[Derived Column Output].Columns[full_name]">
+                      <properties>
+                        <property name="Expression">TRIM(#{Package\DFT Load Policyholder\SRC Policyholder.Outputs[OLE DB Source Output].Columns[first_name]}) + " " + TRIM(#{Package\DFT Load Policyholder\SRC Policyholder.Outputs[OLE DB Source Output].Columns[last_name]})</property>
+                        <property name="FriendlyExpression">TRIM(first_name) + " " + TRIM(last_name)</property>
+                      </properties>
+                    </outputColumn>
+                    <outputColumn name="email_normalized" dataType="wstr" length="100"
+                      lineageId="Package\DFT Load Policyholder\DER Policyholder Attributes.Outputs[Derived Column Output].Columns[email_normalized]">
+                      <properties>
+                        <property name="Expression">ISNULL(#{Package\DFT Load Policyholder\SRC Policyholder.Outputs[OLE DB Source Output].Columns[email]}) || TRIM(#{Package\DFT Load Policyholder\SRC Policyholder.Outputs[OLE DB Source Output].Columns[email]}) == "" ? NULL(DT_WSTR,100) : LOWER(TRIM(#{Package\DFT Load Policyholder\SRC Policyholder.Outputs[OLE DB Source Output].Columns[email]}))</property>
+                        <property name="FriendlyExpression">ISNULL(email) || TRIM(email) == "" ? NULL(DT_WSTR,100) : LOWER(TRIM(email))</property>
+                      </properties>
+                    </outputColumn>
+                    <outputColumn name="age_band" dataType="str" length="10" codePage="1252"
+                      lineageId="Package\DFT Load Policyholder\DER Policyholder Attributes.Outputs[Derived Column Output].Columns[age_band]">
+                      <properties>
+                        <property name="FriendlyExpression">ISNULL(date_of_birth) ? "UNKNOWN" : DATEDIFF("yy", date_of_birth, GETDATE()) &lt; 25 ? "&lt;25" : DATEDIFF("yy", date_of_birth, GETDATE()) &lt; 45 ? "25-44" : DATEDIFF("yy", date_of_birth, GETDATE()) &lt; 65 ? "45-64" : "65+"</property>
+                      </properties>
+                    </outputColumn>
+                    <outputColumn name="dw_load_ts" dataType="dbTimeStamp2" scale="7"
+                      lineageId="Package\DFT Load Policyholder\DER Policyholder Attributes.Outputs[Derived Column Output].Columns[dw_load_ts]">
+                      <properties>
+                        <property name="FriendlyExpression">GETDATE()</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <component refId="Package\DFT Load Policyholder\DST dim_policyholder"
+              componentClassID="Microsoft.OLEDBDestination" name="DST dim_policyholder">
+              <properties>
+                <property name="AccessMode">3</property>
+                <property name="OpenRowset">[edw].[dim_policyholder]</property>
+                <property name="FastLoadOptions">TABLOCK,CHECK_CONSTRAINTS</property>
+              </properties>
+              <connections>
+                <connection name="OleDbConnection" connectionManagerRefId="Package.ConnectionManagers[InsuranceDW]" />
+              </connections>
+              <inputs>
+                <input name="OLE DB Destination Input">
+                  <inputColumns>
+                    <inputColumn cachedName="policyholder_id" externalMetadataColumnId="policyholder_id" />
+                    <inputColumn cachedName="full_name" externalMetadataColumnId="full_name" />
+                    <inputColumn cachedName="email_normalized" externalMetadataColumnId="email_normalized" />
+                    <inputColumn cachedName="state_code" externalMetadataColumnId="state_code" />
+                    <inputColumn cachedName="age_band" externalMetadataColumnId="age_band" />
+                    <inputColumn cachedName="dw_load_ts" externalMetadataColumnId="dw_load_ts" />
+                  </inputColumns>
+                </input>
+              </inputs>
+            </component>
+          </components>
+
+          <paths>
+            <path refId="Package\DFT Load Policyholder.Paths[OLE DB Source Output]"
+              startId="Package\DFT Load Policyholder\SRC Policyholder.Outputs[OLE DB Source Output]"
+              endId="Package\DFT Load Policyholder\DER Policyholder Attributes.Inputs[Derived Column Input]" />
+            <path refId="Package\DFT Load Policyholder.Paths[Derived Column Output]"
+              startId="Package\DFT Load Policyholder\DER Policyholder Attributes.Outputs[Derived Column Output]"
+              endId="Package\DFT Load Policyholder\DST dim_policyholder.Inputs[OLE DB Destination Input]" />
+          </paths>
+        </pipeline>
+      </DTS:ObjectData>
+    </DTS:Executable>
+  </DTS:Executables>
+
+  <DTS:PrecedenceConstraints>
+    <DTS:PrecedenceConstraint DTS:refId="Package.PrecedenceConstraints[Constraint]"
+      DTS:From="Package\Truncate dim_policyholder"
+      DTS:To="Package\DFT Load Policyholder" />
+  </DTS:PrecedenceConstraints>
+</DTS:Executable>
