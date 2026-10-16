@@ -1,0 +1,252 @@
+{
+  "business_rules": [
+    "BR-7: every status transition is audited (audited column(s): claim_status; audit.claim_status_history (claim_id, old_status, new_status, changed_at, changed_by) = (i.claim_id, d.claim_status, i.claim_status, SYSDATETIME(), SUSER_SNAME()), only where ISNULL(d.claim_status, '') <> ISNULL(i.claim_status, '') (string comparison is case-insensitive under the SQL Server default collation, X2)).",
+    "OLTP-side (not migrated): BR-8: closing or denying a claim stamps closed_date; re-opening clears it. (Side effect on the source row itself.) This mutates the source row (dbo.claim.closed_date) and stays in the OLTP system.",
+    "IR wiring for this unit (src_claim -> tgt_claim_status_history, no steps) is a placeholder required by the IR schema; codegen is skipped (manual path)."
+  ],
+  "complexity": {
+    "factors": {
+      "derived_columns": 0,
+      "joins": 0,
+      "lookups": 0,
+      "pending_expressions": 0,
+      "unsupported_constructs": 2
+    },
+    "recommended_path": "manual",
+    "score": 47
+  },
+  "dq_rules": [],
+  "ir_version": "1.1.0",
+  "name": "trg_Claim_StatusAudit",
+  "parameters": [
+    {
+      "data_type": "timestamp",
+      "kind": "run_ts",
+      "legacy_refs": [
+        "SYSDATETIME()"
+      ],
+      "name": "run_ts"
+    }
+  ],
+  "post_load_actions": [],
+  "references": [],
+  "source_artifact": {
+    "file_path": "sample_artifacts/tsql/trg_Claim_StatusAudit.sql",
+    "object_name": "dbo.trg_Claim_StatusAudit",
+    "parsed_at": "2026-10-16T00:00:00Z",
+    "parser_version": "0.1.0",
+    "sha256": "COMPUTED_AT_PARSE_TIME",
+    "technology": "tsql"
+  },
+  "sources": [
+    {
+      "alias": "src_claim",
+      "columns": [
+        {
+          "data_type": "int",
+          "description": null,
+          "is_key": true,
+          "name": "claim_id",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "string",
+          "description": null,
+          "is_key": false,
+          "name": "claim_number",
+          "nullable": false,
+          "precision": 20,
+          "scale": null
+        },
+        {
+          "data_type": "int",
+          "description": null,
+          "is_key": false,
+          "name": "policy_id",
+          "nullable": true,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "int",
+          "description": null,
+          "is_key": false,
+          "name": "handling_agent_id",
+          "nullable": true,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "date",
+          "description": null,
+          "is_key": false,
+          "name": "loss_date",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "date",
+          "description": null,
+          "is_key": false,
+          "name": "reported_date",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "date",
+          "description": null,
+          "is_key": false,
+          "name": "closed_date",
+          "nullable": true,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "string",
+          "description": null,
+          "is_key": false,
+          "name": "claim_status",
+          "nullable": false,
+          "precision": 10,
+          "scale": null
+        },
+        {
+          "data_type": "string",
+          "description": null,
+          "is_key": false,
+          "name": "loss_type",
+          "nullable": false,
+          "precision": 20,
+          "scale": null
+        },
+        {
+          "data_type": "decimal",
+          "description": null,
+          "is_key": false,
+          "name": "reserve_amount",
+          "nullable": false,
+          "precision": 12,
+          "scale": 2
+        },
+        {
+          "data_type": "boolean",
+          "description": null,
+          "is_key": false,
+          "name": "is_deleted",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "timestamp",
+          "description": null,
+          "is_key": false,
+          "name": "updated_at",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        }
+      ],
+      "schema_name": "dbo",
+      "sql_override": null,
+      "system": "PolicyAdmin",
+      "table": "claim"
+    }
+  ],
+  "steps": [],
+  "targets": [
+    {
+      "dataset": {
+        "alias": "tgt_claim_status_history",
+        "columns": [
+          {
+            "data_type": "int",
+            "description": null,
+            "is_key": false,
+            "name": "claim_id",
+            "nullable": false,
+            "precision": null,
+            "scale": null
+          },
+          {
+            "data_type": "string",
+            "description": null,
+            "is_key": false,
+            "name": "old_status",
+            "nullable": true,
+            "precision": 10,
+            "scale": null
+          },
+          {
+            "data_type": "string",
+            "description": null,
+            "is_key": false,
+            "name": "new_status",
+            "nullable": false,
+            "precision": 10,
+            "scale": null
+          },
+          {
+            "data_type": "timestamp",
+            "description": null,
+            "is_key": false,
+            "name": "changed_at",
+            "nullable": false,
+            "precision": null,
+            "scale": null
+          },
+          {
+            "data_type": "string",
+            "description": null,
+            "is_key": false,
+            "name": "changed_by",
+            "nullable": false,
+            "precision": 128,
+            "scale": null
+          }
+        ],
+        "schema_name": "audit",
+        "sql_override": null,
+        "system": "InsuranceDW",
+        "table": "claim_status_history"
+      },
+      "input": "src_claim",
+      "load_strategy": {
+        "business_keys": [],
+        "current_flag_column": null,
+        "effective_from_column": null,
+        "effective_to_column": null,
+        "end_date_sentinel": null,
+        "insert_only_columns": [],
+        "mode": "append",
+        "surrogate_key_column": null,
+        "surrogate_key_strategy": null,
+        "tracked_columns": [],
+        "update_condition": null,
+        "update_only_columns": [],
+        "watermark": null,
+        "watermark_column": null
+      },
+      "partition_by": []
+    }
+  ],
+  "unit_id": "tsql.trg_Claim_StatusAudit",
+  "unsupported_constructs": [
+    {
+      "kind": "trigger",
+      "original_snippet": "CREATE OR ALTER TRIGGER dbo.trg_Claim_StatusAudit\nON dbo.claim\nAFTER UPDATE\nAS\nBEGIN\n    SET NOCOUNT ON;\n\n    IF NOT UPDATE(claim_status)\n        RETURN;\n\n    /* Business rule BR-7: every status transition is audited */\n    INSERT INTO audit.claim_status_history (claim_id, old_status, new_status, changed_at, changed_by)\n    SELECT  i.claim_id,\n            d.claim_status,\n            i.claim_status,\n            SYSDATETIME(),\n            SUSER_SNAME()\n    FROM    inserted i\n    INNER JOIN deleted d\n            ON d.claim_id = i.claim_id\n    WHERE   ISNULL(d.claim_status, '') <> ISNULL(i.claim_status, '');\n\n    /* Business rule BR-8: closing or denying a claim stamps closed_date;\n       re-opening clears it. (Side effect on the source row itself.) */\n    UPDATE  c\n    SET     c.closed_date = CASE\n                              WHEN i.claim_status IN ('CLOSED', 'DENIED')\n                                   AND c.closed_date IS NULL THEN CAST(SYSDATETIME() AS DATE)\n                              WHEN i.claim_status = 'REOPENED' THEN NULL\n                              ELSE c.closed_date\n                            END\n    FROM    dbo.claim c\n    INNER JOIN inserted i ON i.claim_id = c.claim_id\n    INNER JOIN deleted  d ON d.claim_id = i.claim_id\n    WHERE   d.claim_status <> i.claim_status;\nEND;",
+      "reason": "Spark has no row-level triggers (AFTER UPDATE on dbo.claim).",
+      "suggested_pattern": "Do not emulate the trigger in Spark. Enable Delta Change Data Feed on the migrated claim table (or SQL Server CDC on dbo.claim at the source). A scheduled audit job reads the update_preimage/update_postimage pairs per key where claim_status changed and appends (claim_id, old_status, new_status, changed_at, changed_by) to audit.claim_status_history; changed_at comes from the change commit timestamp (_commit_timestamp / CDC commit time); changed_by comes from the CDC/application user, since SUSER_SNAME() has no Spark equivalent."
+    },
+    {
+      "kind": "source_row_mutation",
+      "original_snippet": "UPDATE  c\n    SET     c.closed_date = CASE\n                              WHEN i.claim_status IN ('CLOSED', 'DENIED')\n                                   AND c.closed_date IS NULL THEN CAST(SYSDATETIME() AS DATE)\n                              WHEN i.claim_status = 'REOPENED' THEN NULL\n                              ELSE c.closed_date\n                            END\n    FROM    dbo.claim c\n    INNER JOIN inserted i ON i.claim_id = c.claim_id\n    INNER JOIN deleted  d ON d.claim_id = i.claim_id\n    WHERE   d.claim_status <> i.claim_status;",
+      "reason": "BR-8 updates the OLTP source row inside the trigger.",
+      "suggested_pattern": "Keep BR-8 in the OLTP system (application logic or the existing trigger); the warehouse only reads closed_date."
+    }
+  ]
+}

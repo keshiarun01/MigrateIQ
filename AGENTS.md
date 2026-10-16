@@ -80,7 +80,8 @@ docs/             PLAN.md, ir_v*_proposal.md, architecture.md
 ## Environment variables
 `MIGRATEIQ_LLM_PROVIDER` (`bedrock` | `anthropic`) · `MIGRATEIQ_MODEL_ID` · `AWS_PROFILE` · `AWS_REGION` ·
 `ANTHROPIC_API_KEY` · `LANGSMITH_TRACING` · `LANGSMITH_API_KEY` · `LANGSMITH_PROJECT` ·
-`MIGRATEIQ_RUN_TS` (default `2026-01-01T00:00:00`)
+`MIGRATEIQ_RUN_TS` (default `2026-01-01T00:00:00`) ·
+`MIGRATEIQ_CATALOG` (DDL for table metadata, default `sample_artifacts/schema/insurance_ddl.sql`)
 
 ## Commands
 ```bash

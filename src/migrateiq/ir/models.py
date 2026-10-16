@@ -1,5 +1,5 @@
 """
-MigrateIQ Intermediate Representation (IR) — v1.
+MigrateIQ Intermediate Representation (IR) — v1.1 (see docs/ir_v1_1_proposal.md).
 
 The IR is the single contract of the system:
 
@@ -27,7 +27,7 @@ from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-IR_VERSION = "1.0.0"
+IR_VERSION = "1.1.0"
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +109,12 @@ class MigrationPath(str, Enum):
     TEMPLATE = "template"              # low complexity: template-only codegen
     LLM = "llm"                        # agent-assisted codegen
     MANUAL = "manual"                  # route to human
+
+
+class RunParameterKind(str, Enum):
+    """IR v1.1 (G1): kind of runtime value a job takes as an argument."""
+    RUN_TS = "run_ts"                  # pinned run timestamp (MIGRATEIQ_RUN_TS)
+    WATERMARK = "watermark"            # incremental-load high-water mark
 
 
 class _Base(BaseModel):
@@ -223,6 +229,12 @@ class LookupStep(_StepBase):
     on_multiple_match: Literal["first", "last", "any", "error"] = "any"
     is_unconnected: bool = False
 
+    def output_names(self) -> list[str]:
+        """IR v1.1 (G5): a redirect lookup emits '<id>.match' and '<id>.no_match'."""
+        if self.on_no_match == LookupNoMatchPolicy.REDIRECT:
+            return [f"{self.id}.match", f"{self.id}.no_match"]
+        return [self.id]
+
 
 class Aggregation(_Base):
     output_column: str
@@ -280,6 +292,17 @@ Step = Annotated[
 # ---------------------------------------------------------------------------
 # Targets, load strategy, quality
 # ---------------------------------------------------------------------------
+class WatermarkSpec(_Base):
+    """IR v1.1 (G4): where an incremental watermark lives and how it advances."""
+    store_table: str = Field(..., description="e.g. 'etl.watermark'")
+    job_name: str = Field(..., description="Key row in store_table, e.g. 'usp_Load_FactPremium'")
+    column: str = Field(..., description="Source column whose MAX becomes the new watermark")
+    initial_value: str = Field(..., description="Value used when no row exists, e.g. '1900-01-01'")
+    computed_from: str = Field(
+        ..., description="Step output MAX(column) is taken from (after joins/filters, see X4)")
+    advance_only_if_rows: bool = True
+
+
 class LoadStrategy(_Base):
     mode: LoadMode
     business_keys: list[str] = Field(default_factory=list)
@@ -290,16 +313,29 @@ class LoadStrategy(_Base):
     effective_to_column: Optional[str] = None
     current_flag_column: Optional[str] = None
     surrogate_key_column: Optional[str] = None
+    # IR v1.1
+    update_condition: Optional[Expression] = Field(
+        None, description="G2: MERGE 'WHEN MATCHED AND (...)' condition, verbatim (merge_upsert only)")
+    insert_only_columns: list[str] = Field(default_factory=list, description="G3")
+    update_only_columns: list[str] = Field(default_factory=list, description="G3")
+    watermark: Optional[WatermarkSpec] = Field(None, description="G4")
+    end_date_sentinel: Optional[str] = Field(
+        None, description="G10: effective_to value of the current version, e.g. '9999-12-31 00:00:00'")
+    surrogate_key_strategy: Optional[Literal["identity", "max_plus_row_number", "hash"]] = Field(
+        None, description="G10")
 
     @model_validator(mode="after")
     def _mode_requirements(self) -> "LoadStrategy":
         if self.mode in (LoadMode.MERGE_UPSERT, LoadMode.SCD2) and not self.business_keys:
             raise ValueError(f"{self.mode.value} requires business_keys")
         if self.mode == LoadMode.SCD2:
-            missing = [f for f in ("effective_from_column", "effective_to_column",
-                                   "current_flag_column") if not getattr(self, f)]
-            if missing or not self.tracked_columns:
-                raise ValueError(f"scd2 requires tracked_columns and {missing or 'ok'}")
+            missing = [f for f in ("tracked_columns", "effective_from_column",
+                                   "effective_to_column", "current_flag_column")
+                       if not getattr(self, f)]
+            if missing:
+                raise ValueError(f"scd2 requires: {', '.join(missing)}")
+        if self.update_condition is not None and self.mode != LoadMode.MERGE_UPSERT:
+            raise ValueError(f"update_condition is only valid for merge_upsert, not {self.mode.value}")
         return self
 
 
@@ -325,6 +361,25 @@ class UnsupportedConstruct(_Base):
     original_snippet: str
     reason: str
     suggested_pattern: Optional[str] = None
+
+
+class RunParameter(_Base):
+    """IR v1.1 (G1): a runtime value the generated job takes as an argument."""
+    name: str = Field(..., description="Job argument name, e.g. 'run_ts'")
+    kind: RunParameterKind
+    data_type: DataType = DataType.TIMESTAMP
+    legacy_refs: list[str] = Field(
+        default_factory=list, description="Legacy spellings, e.g. ['GETDATE()', '@[User::RunStartTime]']")
+
+
+class PostLoadAction(_Base):
+    """IR v1.1 (G6): work done after the load, e.g. job_log rows or MERGE OUTPUT counts."""
+    kind: Literal["job_log", "row_counts"]
+    on: Literal["success", "failure", "always"]
+    target_table: str
+    columns: dict[str, str] = Field(default_factory=dict,
+                                    description="{target_column: source description}")
+    original_snippet: str
 
 
 class SourceArtifact(_Base):
@@ -361,6 +416,9 @@ class MigrationUnit(_Base):
     business_rules: list[str] = Field(default_factory=list)
     unsupported_constructs: list[UnsupportedConstruct] = Field(default_factory=list)
     complexity: Optional[Complexity] = None
+    # IR v1.1
+    parameters: list[RunParameter] = Field(default_factory=list, description="G1")
+    post_load_actions: list[PostLoadAction] = Field(default_factory=list, description="G6")
 
     # ---- graph validation -------------------------------------------------
     @model_validator(mode="after")
@@ -380,7 +438,10 @@ class MigrationUnit(_Base):
 
         # steps must be listed in executable (topological) order
         for step in self.steps:
-            for inp in step.inputs:
+            for i, inp in enumerate(step.inputs):
+                # G7: the right-hand input of a join may be a reference dataset
+                if isinstance(step, JoinStep) and i == 1 and inp in ref_aliases:
+                    continue
                 if inp not in available:
                     raise ValueError(
                         f"Step '{step.id}' input '{inp}' is not defined before it. "
@@ -388,7 +449,7 @@ class MigrationUnit(_Base):
             if isinstance(step, LookupStep) and step.reference not in ref_aliases:
                 raise ValueError(f"Lookup '{step.id}' reference '{step.reference}' "
                                  f"not in references")
-            if isinstance(step, RouterStep):
+            if isinstance(step, (RouterStep, LookupStep)):
                 available.update(step.output_names())
             else:
                 available.add(step.id)
@@ -396,6 +457,10 @@ class MigrationUnit(_Base):
         for t in self.targets:
             if t.input not in available:
                 raise ValueError(f"Target '{t.dataset.alias}' input '{t.input}' undefined")
+            wm = t.load_strategy.watermark
+            if wm is not None and wm.computed_from not in available:
+                raise ValueError(f"Target '{t.dataset.alias}' watermark computed_from "
+                                 f"'{wm.computed_from}' undefined")
         return self
 
     # ---- helpers used by agents & reporting -------------------------------
@@ -422,5 +487,8 @@ class MigrationUnit(_Base):
         return found
 
     def is_ready_for_codegen(self) -> bool:
+        if self.complexity is not None and \
+                self.complexity.recommended_path == MigrationPath.MANUAL:   # G9
+            return False
         return not self.pending_expressions() and not any(
             u for u in self.unsupported_constructs if not u.suggested_pattern)

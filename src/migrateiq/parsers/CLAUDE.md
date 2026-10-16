@@ -17,14 +17,17 @@
 ## Expression capture
 - `original` is copied verbatim. SSIS: use `FriendlyExpression`; if absent, use `Expression` with
   `#{...Columns[x]}` resolved to `x`, and record that in `notes`.
-- Fill `referenced_columns` from the parsed expression, sorted.
+- Fill `referenced_columns` from the parsed expression, sorted. Exception: for SQL text (`sql_override`, dialect
+  `tsql`) keep the order of first appearance in the query, deduplicated; the end-to-end golden requires it.
 - Never guess. If unsure, use `pending` and add a note.
 
 ## Traps each parser must respect (see `sample_artifacts/README.md`)
 SSIS (`ssis.py`)
-- T1 `ISNULL(x)` is `x IS NULL`. T3 `GETDATE()` -> `run_ts` parameter, with a note.
-- T4 Lookup `NoMatchBehavior=0` -> `on_no_match=fail`. T5 `NoMatchBehavior=1` -> `redirect`. Until IR v1.1,
-  model it as a `return_null` lookup followed by a Router on `<returned key> IS NULL`, and say so in `notes`.
+- T1 `ISNULL(x)` is `x IS NULL`. T3 `GETDATE()` -> `run_ts` parameter. A bare runtime value is `deterministic`
+  `current_timestamp()` (codegen pins it to `run_ts`); inside a larger expression it stays `pending` with
+  `base.run_ts_note()`.
+- T4 Lookup `NoMatchBehavior=0` -> `on_no_match=fail`. T5 `NoMatchBehavior=1` -> `redirect`; downstream
+  steps consume `<id>.match` / `<id>.no_match` (IR v1.1, G5).
 - T6 tracked columns come from the Conditional Split expression, not from all columns.
 - T7 OLE DB Command + Multicast expire path collapses into `LoadStrategy(mode=scd2)`. Keep `source_component`
   names and add a `business_rules` line describing the row-by-row update being replaced.
@@ -44,13 +47,14 @@ Informatica (`informatica.py`)
 T-SQL (`tsql.py`)
 - T16 `ROW_NUMBER() ... = 1` -> `DeduplicateStep` with the exact `order_by`.
 - T17 range join conditions -> `JoinStep` with the full non-equi condition. T18 keep `INNER`.
-- T19 watermark read/advance logic goes into `business_rules` (IR v1.1 adds `WatermarkSpec`).
+- T19 watermark read/advance logic goes into `business_rules` and `LoadStrategy.watermark` (`WatermarkSpec`, IR v1.1).
 - T20 `WHEN MATCHED AND (a <> b ...)`: keep `<>` verbatim. Never `<=>`.
 - T21 a trigger -> `UnsupportedConstruct(kind="trigger")` with a `suggested_pattern` (CDC / Delta CDF + audit job),
   and `recommended_path=manual`.
 - T22 BR-8 (source-row mutation) -> `business_rules` entry marked OLTP-side, plus an `UnsupportedConstruct`.
-- Cursors, dynamic SQL, `@@ROWCOUNT` logic, TRY/CATCH, and job_log writes -> `unsupported_constructs`
-  unless IR v1.1 covers them.
+- Covered by IR v1.1: the watermark `@@ROWCOUNT` upsert (`WatermarkSpec`), and job_log writes, MERGE OUTPUT counts
+  and TRY/CATCH + THROW (`post_load_actions`). Cursors, dynamic SQL, and any other `@@ROWCOUNT` or TRY/CATCH logic
+  -> `unsupported_constructs`.
 
 ## Required tests per parser
 - Golden: `tests/golden/parser/<unit_id>.ir.json`, compared through `tests/helpers/golden.py`

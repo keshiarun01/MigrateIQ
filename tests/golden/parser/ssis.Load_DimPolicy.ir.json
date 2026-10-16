@@ -1,0 +1,597 @@
+{
+  "business_rules": [
+    "Lookup 'LKP Current dim_policy' has no connection manager; system 'InsuranceDW' inferred from 'LKP dim_product', which uses the same schema 'edw'.",
+    "Conditional Split 'CSPL Detect Change' output 'Unchanged' is not connected: those rows are discarded.",
+    "Row-by-row OLE DB Command 'CMD Expire Current' (fed by Multicast 'MC Changed') expires the current version; replaced by a set-based SCD2 MERGE. Original: UPDATE edw.dim_policy SET row_effective_to = ?, is_current = 0 WHERE policy_key = ?"
+  ],
+  "complexity": {
+    "factors": {
+      "derived_columns": 4,
+      "joins": 0,
+      "lookups": 2,
+      "pending_expressions": 3,
+      "routers": 1,
+      "scd2_targets": 1,
+      "unions": 1
+    },
+    "recommended_path": "llm",
+    "score": 58
+  },
+  "dq_rules": [
+    {
+      "column": "status_desc",
+      "dataset_alias": "tgt_dim_policy",
+      "derived_from": "derived column domain",
+      "params": {
+        "values": [
+          "ACTIVE",
+          "CANCELLED",
+          "LAPSED",
+          "UNKNOWN"
+        ]
+      },
+      "rule_type": "accepted_values",
+      "severity": "error"
+    }
+  ],
+  "ir_version": "1.1.0",
+  "name": "Load_DimPolicy",
+  "parameters": [
+    {
+      "data_type": "timestamp",
+      "kind": "run_ts",
+      "legacy_refs": [
+        "@[System::StartTime]",
+        "@[User::RunStartTime]",
+        "User::RunStartTime"
+      ],
+      "name": "run_ts"
+    }
+  ],
+  "post_load_actions": [],
+  "references": [
+    {
+      "alias": "ref_dim_product",
+      "columns": [
+        {
+          "data_type": "int",
+          "description": null,
+          "is_key": true,
+          "name": "product_key",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "int",
+          "description": null,
+          "is_key": false,
+          "name": "product_id",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "string",
+          "description": null,
+          "is_key": false,
+          "name": "line_of_business",
+          "nullable": false,
+          "precision": 20,
+          "scale": null
+        }
+      ],
+      "schema_name": "edw",
+      "sql_override": {
+        "dialect": "tsql",
+        "notes": null,
+        "original": "SELECT product_key, product_id, line_of_business FROM edw.dim_product",
+        "referenced_columns": [
+          "product_key",
+          "product_id",
+          "line_of_business"
+        ],
+        "spark_sql": "SELECT product_key, product_id, line_of_business FROM edw.dim_product",
+        "translation_status": "deterministic"
+      },
+      "system": "InsuranceDW",
+      "table": "dim_product"
+    },
+    {
+      "alias": "ref_dim_policy",
+      "columns": [
+        {
+          "data_type": "int",
+          "description": null,
+          "is_key": true,
+          "name": "policy_key",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "int",
+          "description": null,
+          "is_key": false,
+          "name": "policy_id",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "string",
+          "description": null,
+          "is_key": false,
+          "name": "status_code",
+          "nullable": false,
+          "precision": 1,
+          "scale": null
+        },
+        {
+          "data_type": "decimal",
+          "description": null,
+          "is_key": false,
+          "name": "annual_premium",
+          "nullable": false,
+          "precision": 12,
+          "scale": 2
+        },
+        {
+          "data_type": "decimal",
+          "description": null,
+          "is_key": false,
+          "name": "deductible",
+          "nullable": false,
+          "precision": 10,
+          "scale": 2
+        }
+      ],
+      "schema_name": "edw",
+      "sql_override": {
+        "dialect": "tsql",
+        "notes": null,
+        "original": "SELECT policy_key, policy_id, status_code, annual_premium, deductible\nFROM edw.dim_policy WHERE is_current = 1",
+        "referenced_columns": [
+          "policy_key",
+          "policy_id",
+          "status_code",
+          "annual_premium",
+          "deductible",
+          "is_current"
+        ],
+        "spark_sql": "SELECT policy_key, policy_id, status_code, annual_premium, deductible FROM edw.dim_policy WHERE is_current = 1",
+        "translation_status": "deterministic"
+      },
+      "system": "InsuranceDW",
+      "table": "dim_policy"
+    }
+  ],
+  "source_artifact": {
+    "file_path": "sample_artifacts/ssis/Load_DimPolicy.dtsx",
+    "object_name": "Load_DimPolicy",
+    "parsed_at": "2026-10-16T00:00:00Z",
+    "parser_version": "0.1.0",
+    "sha256": "COMPUTED_AT_PARSE_TIME",
+    "technology": "ssis"
+  },
+  "sources": [
+    {
+      "alias": "src_policy",
+      "columns": [
+        {
+          "data_type": "int",
+          "description": null,
+          "is_key": true,
+          "name": "policy_id",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "string",
+          "description": null,
+          "is_key": false,
+          "name": "policy_number",
+          "nullable": false,
+          "precision": 20,
+          "scale": null
+        },
+        {
+          "data_type": "int",
+          "description": null,
+          "is_key": false,
+          "name": "product_id",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "string",
+          "description": null,
+          "is_key": false,
+          "name": "status_code",
+          "nullable": false,
+          "precision": 1,
+          "scale": null
+        },
+        {
+          "data_type": "date",
+          "description": null,
+          "is_key": false,
+          "name": "effective_date",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "date",
+          "description": null,
+          "is_key": false,
+          "name": "expiration_date",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "decimal",
+          "description": null,
+          "is_key": false,
+          "name": "annual_premium",
+          "nullable": false,
+          "precision": 12,
+          "scale": 2
+        },
+        {
+          "data_type": "decimal",
+          "description": null,
+          "is_key": false,
+          "name": "deductible",
+          "nullable": false,
+          "precision": 10,
+          "scale": 2
+        }
+      ],
+      "schema_name": "dbo",
+      "sql_override": {
+        "dialect": "tsql",
+        "notes": null,
+        "original": "SELECT p.policy_id, p.policy_number, p.product_id, p.status_code,\n       p.effective_date, p.expiration_date, p.annual_premium, p.deductible\nFROM dbo.policy p\nWHERE p.status_code <> 'P'   -- pending policies are not loaded to the warehouse",
+        "referenced_columns": [
+          "policy_id",
+          "policy_number",
+          "product_id",
+          "status_code",
+          "effective_date",
+          "expiration_date",
+          "annual_premium",
+          "deductible"
+        ],
+        "spark_sql": "SELECT p.policy_id, p.policy_number, p.product_id, p.status_code, p.effective_date, p.expiration_date, p.annual_premium, p.deductible FROM dbo.policy AS p WHERE p.status_code <> 'P' /* pending policies are not loaded to the warehouse */",
+        "translation_status": "deterministic"
+      },
+      "system": "PolicyAdmin",
+      "table": "policy"
+    }
+  ],
+  "steps": [
+    {
+      "default_values": {},
+      "description": null,
+      "id": "lkp_dim_product",
+      "inputs": [
+        "src_policy"
+      ],
+      "is_unconnected": false,
+      "join_keys": {
+        "product_id": "product_id"
+      },
+      "on_multiple_match": "any",
+      "on_no_match": "fail",
+      "reference": "ref_dim_product",
+      "reference_filter": null,
+      "return_columns": {
+        "line_of_business": "line_of_business",
+        "product_key": "product_key"
+      },
+      "source_component": "LKP dim_product",
+      "type": "lookup"
+    },
+    {
+      "description": null,
+      "id": "der_status_desc",
+      "inputs": [
+        "lkp_dim_product"
+      ],
+      "keep_input_columns": true,
+      "mappings": [
+        {
+          "expression": {
+            "dialect": "ssis_expr",
+            "notes": null,
+            "original": "status_code == \"A\" ? \"ACTIVE\" : status_code == \"C\" ? \"CANCELLED\" : status_code == \"L\" ? \"LAPSED\" : \"UNKNOWN\"",
+            "referenced_columns": [
+              "status_code"
+            ],
+            "spark_sql": null,
+            "translation_status": "pending"
+          },
+          "target_column": "status_desc",
+          "target_type": "string"
+        }
+      ],
+      "source_component": "DER Status Desc",
+      "type": "derived_column"
+    },
+    {
+      "default_values": {},
+      "description": null,
+      "id": "lkp_current_dim_policy",
+      "inputs": [
+        "der_status_desc"
+      ],
+      "is_unconnected": false,
+      "join_keys": {
+        "policy_id": "policy_id"
+      },
+      "on_multiple_match": "any",
+      "on_no_match": "redirect",
+      "reference": "ref_dim_policy",
+      "reference_filter": null,
+      "return_columns": {
+        "existing_policy_key": "policy_key",
+        "old_annual_premium": "annual_premium",
+        "old_deductible": "deductible",
+        "old_status_code": "status_code"
+      },
+      "source_component": "LKP Current dim_policy",
+      "type": "lookup"
+    },
+    {
+      "default_group": "unchanged",
+      "description": null,
+      "first_match_only": true,
+      "groups": [
+        {
+          "condition": {
+            "dialect": "ssis_expr",
+            "notes": null,
+            "original": "status_code != old_status_code || annual_premium != old_annual_premium || deductible != old_deductible",
+            "referenced_columns": [
+              "annual_premium",
+              "deductible",
+              "old_annual_premium",
+              "old_deductible",
+              "old_status_code",
+              "status_code"
+            ],
+            "spark_sql": "status_code <> old_status_code OR annual_premium <> old_annual_premium OR deductible <> old_deductible",
+            "translation_status": "deterministic"
+          },
+          "name": "changed"
+        }
+      ],
+      "id": "cspl_detect_change",
+      "inputs": [
+        "lkp_current_dim_policy.match"
+      ],
+      "source_component": "CSPL Detect Change",
+      "type": "router"
+    },
+    {
+      "by_name": true,
+      "description": null,
+      "distinct": false,
+      "id": "uall_new_and_changed",
+      "inputs": [
+        "lkp_current_dim_policy.no_match",
+        "cspl_detect_change.changed"
+      ],
+      "source_component": "UALL New And Changed",
+      "type": "union"
+    },
+    {
+      "description": null,
+      "id": "der_scd2_columns",
+      "inputs": [
+        "uall_new_and_changed"
+      ],
+      "keep_input_columns": true,
+      "mappings": [
+        {
+          "expression": {
+            "dialect": "ssis_expr",
+            "notes": "Package start time (User::RunStartTime); codegen pins it to the run_ts job argument.",
+            "original": "@[User::RunStartTime]",
+            "referenced_columns": [],
+            "spark_sql": "current_timestamp()",
+            "translation_status": "deterministic"
+          },
+          "target_column": "row_effective_from",
+          "target_type": "timestamp"
+        },
+        {
+          "expression": {
+            "dialect": "ssis_expr",
+            "notes": null,
+            "original": "(DT_DBTIMESTAMP2,7)\"9999-12-31 00:00:00\"",
+            "referenced_columns": [],
+            "spark_sql": null,
+            "translation_status": "pending"
+          },
+          "target_column": "row_effective_to",
+          "target_type": "timestamp"
+        },
+        {
+          "expression": {
+            "dialect": "ssis_expr",
+            "notes": null,
+            "original": "(DT_BOOL)1",
+            "referenced_columns": [],
+            "spark_sql": null,
+            "translation_status": "pending"
+          },
+          "target_column": "is_current",
+          "target_type": "boolean"
+        }
+      ],
+      "source_component": "DER SCD2 Columns",
+      "type": "derived_column"
+    }
+  ],
+  "targets": [
+    {
+      "dataset": {
+        "alias": "tgt_dim_policy",
+        "columns": [
+          {
+            "data_type": "int",
+            "description": null,
+            "is_key": false,
+            "name": "policy_id",
+            "nullable": false,
+            "precision": null,
+            "scale": null
+          },
+          {
+            "data_type": "string",
+            "description": null,
+            "is_key": false,
+            "name": "policy_number",
+            "nullable": false,
+            "precision": 20,
+            "scale": null
+          },
+          {
+            "data_type": "int",
+            "description": null,
+            "is_key": false,
+            "name": "product_key",
+            "nullable": false,
+            "precision": null,
+            "scale": null
+          },
+          {
+            "data_type": "string",
+            "description": null,
+            "is_key": false,
+            "name": "line_of_business",
+            "nullable": false,
+            "precision": 20,
+            "scale": null
+          },
+          {
+            "data_type": "string",
+            "description": null,
+            "is_key": false,
+            "name": "status_code",
+            "nullable": false,
+            "precision": 1,
+            "scale": null
+          },
+          {
+            "data_type": "string",
+            "description": null,
+            "is_key": false,
+            "name": "status_desc",
+            "nullable": false,
+            "precision": 20,
+            "scale": null
+          },
+          {
+            "data_type": "decimal",
+            "description": null,
+            "is_key": false,
+            "name": "annual_premium",
+            "nullable": false,
+            "precision": 12,
+            "scale": 2
+          },
+          {
+            "data_type": "decimal",
+            "description": null,
+            "is_key": false,
+            "name": "deductible",
+            "nullable": false,
+            "precision": 10,
+            "scale": 2
+          },
+          {
+            "data_type": "date",
+            "description": null,
+            "is_key": false,
+            "name": "effective_date",
+            "nullable": false,
+            "precision": null,
+            "scale": null
+          },
+          {
+            "data_type": "date",
+            "description": null,
+            "is_key": false,
+            "name": "expiration_date",
+            "nullable": false,
+            "precision": null,
+            "scale": null
+          },
+          {
+            "data_type": "timestamp",
+            "description": null,
+            "is_key": false,
+            "name": "row_effective_from",
+            "nullable": false,
+            "precision": null,
+            "scale": null
+          },
+          {
+            "data_type": "timestamp",
+            "description": null,
+            "is_key": false,
+            "name": "row_effective_to",
+            "nullable": false,
+            "precision": null,
+            "scale": null
+          },
+          {
+            "data_type": "boolean",
+            "description": null,
+            "is_key": false,
+            "name": "is_current",
+            "nullable": false,
+            "precision": null,
+            "scale": null
+          }
+        ],
+        "schema_name": "edw",
+        "sql_override": null,
+        "system": "InsuranceDW",
+        "table": "dim_policy"
+      },
+      "input": "der_scd2_columns",
+      "load_strategy": {
+        "business_keys": [
+          "policy_id"
+        ],
+        "current_flag_column": "is_current",
+        "effective_from_column": "row_effective_from",
+        "effective_to_column": "row_effective_to",
+        "end_date_sentinel": "9999-12-31 00:00:00",
+        "insert_only_columns": [],
+        "mode": "scd2",
+        "surrogate_key_column": "policy_key",
+        "surrogate_key_strategy": "identity",
+        "tracked_columns": [
+          "annual_premium",
+          "deductible",
+          "status_code"
+        ],
+        "update_condition": null,
+        "update_only_columns": [],
+        "watermark": null,
+        "watermark_column": null
+      },
+      "partition_by": []
+    }
+  ],
+  "unit_id": "ssis.Load_DimPolicy",
+  "unsupported_constructs": []
+}

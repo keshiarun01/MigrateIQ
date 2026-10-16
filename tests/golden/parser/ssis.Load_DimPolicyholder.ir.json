@@ -1,0 +1,316 @@
+{
+  "business_rules": [
+    "Target is truncated and fully reloaded each run (Execute SQL Task 'Truncate dim_policyholder')."
+  ],
+  "complexity": {
+    "factors": {
+      "derived_columns": 4,
+      "joins": 0,
+      "lookups": 0,
+      "pending_expressions": 3
+    },
+    "recommended_path": "template",
+    "score": 18
+  },
+  "dq_rules": [
+    {
+      "column": "policyholder_id",
+      "dataset_alias": "tgt_dim_policyholder",
+      "derived_from": "PRIMARY KEY",
+      "params": {},
+      "rule_type": "unique",
+      "severity": "error"
+    },
+    {
+      "column": "full_name",
+      "dataset_alias": "tgt_dim_policyholder",
+      "derived_from": "NOT NULL constraint",
+      "params": {},
+      "rule_type": "not_null",
+      "severity": "error"
+    },
+    {
+      "column": "age_band",
+      "dataset_alias": "tgt_dim_policyholder",
+      "derived_from": "derived column domain",
+      "params": {
+        "values": [
+          "UNKNOWN",
+          "<25",
+          "25-44",
+          "45-64",
+          "65+"
+        ]
+      },
+      "rule_type": "accepted_values",
+      "severity": "error"
+    },
+    {
+      "column": null,
+      "dataset_alias": "tgt_dim_policyholder",
+      "derived_from": "full reload, no filters",
+      "params": {
+        "against": "src_policyholder"
+      },
+      "rule_type": "row_count_match",
+      "severity": "error"
+    }
+  ],
+  "ir_version": "1.1.0",
+  "name": "Load_DimPolicyholder",
+  "parameters": [
+    {
+      "data_type": "timestamp",
+      "kind": "run_ts",
+      "legacy_refs": [
+        "GETDATE()"
+      ],
+      "name": "run_ts"
+    }
+  ],
+  "post_load_actions": [],
+  "references": [],
+  "source_artifact": {
+    "file_path": "sample_artifacts/ssis/Load_DimPolicyholder.dtsx",
+    "object_name": "Load_DimPolicyholder",
+    "parsed_at": "2026-10-16T00:00:00Z",
+    "parser_version": "0.1.0",
+    "sha256": "COMPUTED_AT_PARSE_TIME",
+    "technology": "ssis"
+  },
+  "sources": [
+    {
+      "alias": "src_policyholder",
+      "columns": [
+        {
+          "data_type": "int",
+          "description": null,
+          "is_key": true,
+          "name": "policyholder_id",
+          "nullable": false,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "string",
+          "description": null,
+          "is_key": false,
+          "name": "first_name",
+          "nullable": false,
+          "precision": 50,
+          "scale": null
+        },
+        {
+          "data_type": "string",
+          "description": null,
+          "is_key": false,
+          "name": "last_name",
+          "nullable": false,
+          "precision": 50,
+          "scale": null
+        },
+        {
+          "data_type": "date",
+          "description": null,
+          "is_key": false,
+          "name": "date_of_birth",
+          "nullable": true,
+          "precision": null,
+          "scale": null
+        },
+        {
+          "data_type": "string",
+          "description": null,
+          "is_key": false,
+          "name": "email",
+          "nullable": true,
+          "precision": 100,
+          "scale": null
+        },
+        {
+          "data_type": "string",
+          "description": null,
+          "is_key": false,
+          "name": "state_code",
+          "nullable": false,
+          "precision": 2,
+          "scale": null
+        }
+      ],
+      "schema_name": "dbo",
+      "sql_override": {
+        "dialect": "tsql",
+        "notes": "WITH (NOLOCK) table hint dropped; no Spark equivalent needed for snapshot reads.",
+        "original": "SELECT policyholder_id, first_name, last_name, date_of_birth, email, state_code\nFROM dbo.policyholder WITH (NOLOCK)",
+        "referenced_columns": [
+          "policyholder_id",
+          "first_name",
+          "last_name",
+          "date_of_birth",
+          "email",
+          "state_code"
+        ],
+        "spark_sql": "SELECT policyholder_id, first_name, last_name, date_of_birth, email, state_code FROM dbo.policyholder",
+        "translation_status": "deterministic"
+      },
+      "system": "PolicyAdmin",
+      "table": "policyholder"
+    }
+  ],
+  "steps": [
+    {
+      "description": null,
+      "id": "der_policyholder_attributes",
+      "inputs": [
+        "src_policyholder"
+      ],
+      "keep_input_columns": true,
+      "mappings": [
+        {
+          "expression": {
+            "dialect": "ssis_expr",
+            "notes": null,
+            "original": "TRIM(first_name) + \" \" + TRIM(last_name)",
+            "referenced_columns": [
+              "first_name",
+              "last_name"
+            ],
+            "spark_sql": null,
+            "translation_status": "pending"
+          },
+          "target_column": "full_name",
+          "target_type": "string"
+        },
+        {
+          "expression": {
+            "dialect": "ssis_expr",
+            "notes": null,
+            "original": "ISNULL(email) || TRIM(email) == \"\" ? NULL(DT_WSTR,100) : LOWER(TRIM(email))",
+            "referenced_columns": [
+              "email"
+            ],
+            "spark_sql": null,
+            "translation_status": "pending"
+          },
+          "target_column": "email_normalized",
+          "target_type": "string"
+        },
+        {
+          "expression": {
+            "dialect": "ssis_expr",
+            "notes": "Runtime value 'ISNULL(date_of_birth) ? \"UNKNOWN\" : DATEDIFF(\"yy\", date_of_birth, GETDATE()) < 25 ? \"<25\" : DATEDIFF(\"yy\", date_of_birth, GETDATE()) < 45 ? \"25-44\" : DATEDIFF(\"yy\", date_of_birth, GETDATE()) < 65 ? \"45-64\" : \"65+\"': resolve to the pinned run_ts job argument (MIGRATEIQ_RUN_TS). Left pending; codegen injects run_ts.",
+            "original": "ISNULL(date_of_birth) ? \"UNKNOWN\" : DATEDIFF(\"yy\", date_of_birth, GETDATE()) < 25 ? \"<25\" : DATEDIFF(\"yy\", date_of_birth, GETDATE()) < 45 ? \"25-44\" : DATEDIFF(\"yy\", date_of_birth, GETDATE()) < 65 ? \"45-64\" : \"65+\"",
+            "referenced_columns": [
+              "date_of_birth"
+            ],
+            "spark_sql": null,
+            "translation_status": "pending"
+          },
+          "target_column": "age_band",
+          "target_type": "string"
+        },
+        {
+          "expression": {
+            "dialect": "ssis_expr",
+            "notes": "Non-deterministic; excluded from reconciliation checksums.",
+            "original": "GETDATE()",
+            "referenced_columns": [],
+            "spark_sql": "current_timestamp()",
+            "translation_status": "deterministic"
+          },
+          "target_column": "dw_load_ts",
+          "target_type": "timestamp"
+        }
+      ],
+      "source_component": "DER Policyholder Attributes",
+      "type": "derived_column"
+    }
+  ],
+  "targets": [
+    {
+      "dataset": {
+        "alias": "tgt_dim_policyholder",
+        "columns": [
+          {
+            "data_type": "int",
+            "description": null,
+            "is_key": true,
+            "name": "policyholder_id",
+            "nullable": false,
+            "precision": null,
+            "scale": null
+          },
+          {
+            "data_type": "string",
+            "description": null,
+            "is_key": false,
+            "name": "full_name",
+            "nullable": false,
+            "precision": 101,
+            "scale": null
+          },
+          {
+            "data_type": "string",
+            "description": null,
+            "is_key": false,
+            "name": "email_normalized",
+            "nullable": true,
+            "precision": 100,
+            "scale": null
+          },
+          {
+            "data_type": "string",
+            "description": null,
+            "is_key": false,
+            "name": "state_code",
+            "nullable": false,
+            "precision": 2,
+            "scale": null
+          },
+          {
+            "data_type": "string",
+            "description": null,
+            "is_key": false,
+            "name": "age_band",
+            "nullable": false,
+            "precision": 10,
+            "scale": null
+          },
+          {
+            "data_type": "timestamp",
+            "description": null,
+            "is_key": false,
+            "name": "dw_load_ts",
+            "nullable": false,
+            "precision": null,
+            "scale": null
+          }
+        ],
+        "schema_name": "edw",
+        "sql_override": null,
+        "system": "InsuranceDW",
+        "table": "dim_policyholder"
+      },
+      "input": "der_policyholder_attributes",
+      "load_strategy": {
+        "business_keys": [],
+        "current_flag_column": null,
+        "effective_from_column": null,
+        "effective_to_column": null,
+        "end_date_sentinel": null,
+        "insert_only_columns": [],
+        "mode": "full_overwrite",
+        "surrogate_key_column": null,
+        "surrogate_key_strategy": null,
+        "tracked_columns": [],
+        "update_condition": null,
+        "update_only_columns": [],
+        "watermark": null,
+        "watermark_column": null
+      },
+      "partition_by": []
+    }
+  ],
+  "unit_id": "ssis.Load_DimPolicyholder",
+  "unsupported_constructs": []
+}

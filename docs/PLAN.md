@@ -11,7 +11,7 @@ is a test or command that can pass or fail.
   `source_artifact.parsed_at`. New goldens are shown to the user and written only after approval.
 - Oracles: `tests/oracles/<unit_id>.duckdb.sql`, written by a person, never by an LLM. They emulate
   legacy quirks explicitly (case-insensitive collation, Informatica NULL concatenation, DATEDIFF yy).
-- IR changes go through `docs/ir_v1_1_proposal.md` on Day 1. Workarounds apply until it is approved.
+- IR changes go through `docs/ir_v1_1_proposal.md` on Day 1. Approved and implemented 2026-10-11 (IR 1.1.0).
 - Local table format: Delta Lake (`delta-spark`). MERGE and SCD2 targets are Delta tables.
 - Pinned run timestamp: `MIGRATEIQ_RUN_TS=2026-01-01T00:00:00` (matches `User::RunStartTime` in Load_DimPolicy).
 
@@ -108,6 +108,8 @@ Acceptance:
 - Informatica expressions for T12 and T14 translate and pass the expression-level tests
   (`CASE WHEN`, `concat_ws`/`coalesce` keeps NULL-as-empty).
 - Token log records written for each call, with `prompt_version` and `usd`.
+- The graph re-scores `complexity` (`parsers/complexity.score`) after reconciliation, so the final IR's
+  factors (e.g. `pending_expressions: 0`) match the end-to-end golden.
 
 ### Day 4 — LLM-filled codegen, retry loop: DimPolicy and FACT_CLAIMS
 Work: `scd2_merge.py.j2`, `append.py.j2`, `agents/codegen.py`, retry node, `RetryFeedback`.
